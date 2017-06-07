@@ -40,6 +40,22 @@
 #include "cleanup.h"
 #include "cbt.h"
 
+static const char *get_image_path(const char *image, char *buf, size_t bsize)
+{
+	char *delta_dir = getenv("PLOOP_DELTA_DIR");
+	char *fname;
+
+	if (!delta_dir)
+		return image;
+
+	/* basename() can modify string, so we have to create a copy */
+	fname = strdupa(image);
+
+	snprintf(buf, bsize, "%s/%s", delta_dir, basename(fname));
+
+	return buf;
+}
+
 static int ploop_mount_fs(const char *partname,	struct ploop_mount_param *param,
 		int need_balloon);
 
@@ -137,6 +153,8 @@ char **make_images_list(struct ploop_disk_images_data *di, const char *guid, int
 		return NULL;
 
 	for (n = 0; n < di->nsnapshots; n++) {
+		char buf[PATH_MAX];
+
 		snap_id = find_snapshot_by_guid(di, guid);
 		if (snap_id == -1) {
 			ploop_err(0, "Can't find snapshot by uuid %s", guid);
@@ -147,7 +165,7 @@ char **make_images_list(struct ploop_disk_images_data *di, const char *guid, int
 			ploop_err(0, "Can't find image by guid %s", guid);
 			goto err;
 		}
-		images[n] = strdup(file);
+		images[n] = strdup(get_image_path(file, buf, PATH_MAX));
 		if (images[n] == NULL)
 			goto err;
 		if (n == di->nimages) {
@@ -777,8 +795,12 @@ static int ploop_drop_image(struct ploop_disk_images_data *di)
 	unlink(fname);
 
 	for (i = 0; i < di->nimages; i++) {
-		ploop_log(1, "Dropping image %s", di->images[i]->file);
-		unlink(di->images[i]->file);
+		char buf[PATH_MAX];
+		const char *fname;
+
+		fname = get_image_path(di->images[i]->file, buf, PATH_MAX);
+		ploop_log(1, "Dropping image %s", fname);
+		unlink(fname);
 	}
 
 	get_temp_mountpoint(di->images[0]->file, 0, fname, sizeof(fname));
@@ -867,7 +889,8 @@ int ploop_create_image(struct ploop_create_param *param)
 {
 	struct ploop_disk_images_data *di = NULL;
 	char ddxml[PATH_MAX];
-	char fname[PATH_MAX];
+	char fname[PATH_MAX], buf[PATH_MAX];
+	const char *image_path;
 	int ret;
 	int fmt_version;
 	int image_created = 0;
@@ -885,14 +908,16 @@ int ploop_create_image(struct ploop_create_param *param)
 	fmt_version = param->fmt_version == PLOOP_FMT_UNDEFINED ?
 		default_fmt_version() : param->fmt_version;
 
-	ret = create_image(param->image, di->blocksize, di->size,
+	image_path = get_image_path(param->image, buf, PATH_MAX);
+
+	ret = create_image(image_path, di->blocksize, di->size,
 			param->mode, fmt_version);
 	if (ret)
 		goto out;
 	image_created = 1;
 
-	if (realpath(param->image, fname) == NULL) {
-		ploop_err(errno, "failed realpath(%s)", param->image);
+	if (realpath(image_path, fname) == NULL) {
+		ploop_err(errno, "failed realpath(%s)", image_path);
 		ret = SYSEXIT_CREAT;
 		goto out;
 	}
@@ -1301,14 +1326,16 @@ static const char *get_top_delta_guid(struct ploop_disk_images_data *di)
 static int get_delta_fname(struct ploop_disk_images_data *di, const char *guid,
 	char *out, int len)
 {
-	const char *fname;
+	const char *fname, *fpath;
+	char buf[PATH_MAX];
 
 	fname = find_image_by_guid(di, guid);
 	if (fname == NULL){
 		ploop_err(0, "Can't find image by uuid %s", guid);
 		return SYSEXIT_PARAM;
 	}
-	if (snprintf(out, len, "%s", fname) > len -1) {
+	fpath = get_image_path(fname, buf, PATH_MAX);
+	if (snprintf(out, len, "%s", fpath) > len -1) {
 		ploop_err(0, "Not enough space to store data");
 		return SYSEXIT_PARAM;
 	}

@@ -2374,7 +2374,7 @@ int ploop_mount_image(struct ploop_disk_images_data *di, struct ploop_mount_para
 
 	if (ploop_lock_dd(di))
 		return SYSEXIT_LOCK;
-
+if (0) {
 	ret = ploop_find_dev_by_cn(di, di->runtime->component_name, 1, dev, sizeof(dev));
 	if (ret == -1) {
 		ploop_unlock_dd(di);
@@ -2387,7 +2387,7 @@ int ploop_mount_image(struct ploop_disk_images_data *di, struct ploop_mount_para
 		ret = SYSEXIT_MOUNT;
 		goto err;
 	}
-
+}
 	ret = mount_image(di, param);
 	if (ret == 0 && di->runtime->component_name == NULL)
 		merge_temporary_snapshots(di);
